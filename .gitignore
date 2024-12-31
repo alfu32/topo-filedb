@@ -1,0 +1,4 @@
+*.o
+*.bin
+question_0?
+.vscode
