@@ -10,6 +10,7 @@ typedef struct {
 typedef voxel_s voxel_t;
 
 voxel_t* voxel__instance__new(int x,int y,char content);
+unsigned long long voxel__instance__hash(voxel_t* self);
 // creates and returns a new copy of self
 voxel_t* voxel__instance__deep_copy(voxel_t* self);
 int voxel__instance__free(voxel_t* self);

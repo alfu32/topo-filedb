@@ -10,6 +10,8 @@ int main() {
     }
     printf("Created voxel: x = %d, y = %d, content = %c\n", voxel->x, voxel->y, voxel->content);
 
+    printf("Created voxel hash %llu\n", voxel__instance__hash(voxel));
+
     // Create a deep copy of the voxel
     voxel_t* copy = voxel__instance__deep_copy(voxel);
     if (!copy) {
@@ -18,6 +20,7 @@ int main() {
         return 1;
     }
     printf("Copied voxel: x = %d, y = %d, content = %c\n", copy->x, copy->y, copy->content);
+    printf("Created voxel hash %llu\n", voxel__instance__hash(copy));
 
     // Free the voxel instances
     voxel__instance__free(voxel);

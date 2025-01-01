@@ -17,6 +17,16 @@ voxel_t* voxel__instance__new(int x, int y, char content) {
     return voxel; // Return the pointer to the new voxel
 }
 
+unsigned long long voxel__instance__hash(voxel_t* self) {
+    if (!self) return 0; // Return 0 for null input
+
+    unsigned long long hash = 0;
+    hash |= ((unsigned long long)(unsigned int)self->y) << 32; // Ensure `self->y` fits in 32 bits
+    hash |= (unsigned long long)(unsigned int)self->x;         // Ensure `self->x` fits in 32 bits
+
+    return hash;
+}
+
 // Create and return a deep copy of the voxel
 voxel_t* voxel__instance__deep_copy(voxel_t* self) {
     if (!self) {
