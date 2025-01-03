@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "lib.h"
-#include "scene/scene.h"
+#include "../libscene/scene.h"
 
 const char* map="\
                           OOO    \n\
