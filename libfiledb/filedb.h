@@ -23,6 +23,10 @@ typedef record_s record_t;
  * allocates a new record calculating the uuid of the record based on some hashing algorhithm of the given content ( preferably not outsourced to an external library )
  */
 record_t* record__static__new_from_buffer(int start,char* data,int data_length);
+/**
+ * checks if the record is deleted or not
+ */
+int record__instance__is_deleted(const record_t *record);
 
 typedef int error_t;
 
@@ -95,6 +99,16 @@ error_t database__instance__list_all(database_t* self,record_found_fn on_record_
 error_t database__instance__list_records(database_t* self,record_found_fn on_record_found);
 
 
+/**
+ * Functional type used for callbacks during iteration
+ */
+typedef error_t (*record_iter_fn)(record_t* record, int ord);
+
+/**
+ * Iterates over the latest, non-deleted records.
+ * Calls the provided callback function for each valid record.
+ */
+error_t database__instance__get_latest_records(database_t *self, record_found_fn on_record_found);
 
 /**
  * functional type used in the record with content iterator functions
