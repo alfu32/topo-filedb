@@ -20,6 +20,24 @@ void test_record_creation() {
     free(record);
 }
 
+void test_record_copy() {
+    record_t original = {
+        .id = "abc123def456ghi789jkl012mno345pq",
+        .start = 50,
+        .end = 100
+    };
+
+    record_t *copy = record__instance__copy(&original);
+    assert(copy != NULL);
+    assert(strncmp(copy->id, original.id, 32) == 0);
+    assert(copy->start == original.start);
+    assert(copy->end == original.end);
+
+    printf("test_record_copy passed!\n");
+
+    free(copy);
+}
+
 void test_record_is_deleted() {
     record_t record1 = {.id = "test1", .start = 0, .end = 0};
     record_t record2 = {.id = "test2", .start = 10, .end = 20};
@@ -31,24 +49,29 @@ void test_record_is_deleted() {
 }
 
 void test_database_open_and_close(const char* dbname) {
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     assert(db != NULL);
     assert(db->data_file_reference >= 0);
     assert(db->index_file_reference >= 0);
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 void test_insert_record(const char* dbname) {
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     char data[] = "Hello, database test_insert_record!";
     record_t *record = database__instance__insert_record(db, data, strlen(data));
     assert(record != NULL);
     // assert(strlen(record->id) <= 32);
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 void test_delete_record(const char* dbname) {
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     char data[] = "Test delete";
     record_t *record = database__instance__insert_record(db, data, strlen(data));
     assert(record != NULL);
@@ -56,15 +79,22 @@ void test_delete_record(const char* dbname) {
     assert(deleted != NULL);
     assert(deleted->start == deleted->end);
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 
 int cbk_print_record(record_t *record, int ord) {
-    printf("Record %d: %.32s  %1x  %32x %32x\n", ord, record->id,record__instance__is_deleted(record),record->start,record->end);fflush(stdout);
+    if(!record) {
+        printf("record %04d is Invalid\n",ord);
+    } else {
+        printf("Record %04d: %.32s  %d  %032zx %032zx\n", ord, record->id,record__instance__is_deleted(record),record->start,record->end);
+    }
+    fflush(stdout);
     return 0;
 }
 void test_list_all(const char* dbname) {
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     char data1[] = "Record 1 test_list_all";
     char data2[] = "Record 2 test_list_all";
     database__instance__insert_record(db, data1, strlen(data1));
@@ -72,11 +102,13 @@ void test_list_all(const char* dbname) {
 
     assert(database__instance__list_all(db, cbk_print_record) == 0);
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 
 void test_get_latest_records(const char* dbname){
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
 
     if (db) {
         printf("Latest, non-deleted records:\n");
@@ -84,29 +116,33 @@ void test_get_latest_records(const char* dbname){
         database__instance__list_all(db, cbk_print_record);
         printf(" - print latest records\n");
         database__instance__get_latest_records(db, cbk_print_record);
-        database__static__close(db);
+        assert(database__static__close(db) == 0);
+        assert(database__static__free(db) == 0);
     }
 }
 
 void test_optimize(const char* dbname) {
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     char data1[] = "Record 1 test_optimize";
     char data2[] = "Record 2 test_optimize";
     database__instance__insert_record(db, data1, strlen(data1));
     database__instance__insert_record(db, data2, strlen(data2));
     database__instance__delete_record(db, &db->record_list[0]);
-    printf(" - print unoptimized\n");
+    printf(" - print unoptimized\n");fflush(stdout);
     assert(database__instance__list_all(db, cbk_print_record) == 0);
+    printf(" - optimizing ... \n");fflush(stdout);
     assert(database__instance__optimize(db) == 0);
-    printf(" - print optimized\n");
+    printf(" - print optimized\n");fflush(stdout);
     assert(database__instance__list_all(db, cbk_print_record) == 0);
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 
 // Callback to validate record content
 error_t test_list_all_with_content__validate_and_print(record_t *record, int ord, char *content) {
-    printf("Record %d\t", ord);
+    printf("Record %04d\t", ord);
     printf("ID: %.32s\t", record->id);
     printf("Content: %s\n", content);fflush(stdout);
 
@@ -128,7 +164,8 @@ error_t test_list_all_with_content__validate_and_print(record_t *record, int ord
 }
 void test_list_all_with_content(const char* dbname) {
     // Create a database and insert sample records
-    database_t *db = database__static_open(dbname);
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
     assert(db != NULL);
 
     char data1[] = "Hello, World!";
@@ -153,20 +190,23 @@ void test_list_all_with_content(const char* dbname) {
 
     // Cleanup
     assert(database__static__close(db) == 0);
+    assert(database__static__free(db) == 0);
 }
 
 
-__declspec(dllexport) int main(int argc,const char** argv) {
+int main(int argc,const char** argv) {
     
-    if(argc==0){
+    if(argc<2){
         printf("use a database test name\n");
         return -1;
     }
-    printf("using arg[0] = %s for the test database name\n",argv[0]);
-    const char* dbname = argv[0];
+    printf("using arg[0] = %s for the test database name\n",argv[1]);
+    const char* dbname = argv[1];
     
     printf("=== test_record_creation  ...........====================================================\n");
     test_record_creation();
+    printf("=== test_record_copy  ...............====================================================\n");
+    test_record_copy();
     printf("=== test_record_is_deleted  .........====================================================\n");
     test_record_is_deleted();
     printf("=== test_database_open_and_close  ...====================================================\n");

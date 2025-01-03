@@ -6,15 +6,6 @@
 #include <string.h>
 #include <stdio.h>
 
-// Compute hash
-// Helper function to compute a simple hash for record content
-static void compute_hash(char *data, int data_length, char *hash) {
-    unsigned long long sum = 0;
-    for (int i = 0; i < data_length; i++) {
-        sum += (unsigned char)data[i] * (i + 1);
-    }
-    snprintf(hash, 32, "%032llx", sum);
-}
 
 #ifdef __MINGW32__
 #include <windows.h>
@@ -39,6 +30,16 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return result;
 }
 
+// Compute hash
+// Helper function to compute a simple hash for record content
+static void compute_hash(char *data, int data_length, char *hash) {
+    size_t sum = 0;
+    for (int i = 0; i < data_length; i++) {
+        sum += (unsigned char)data[i] * (i + 1);
+    }
+    snprintf(hash, 32, "%032zx", sum);
+}
+
 int rename_file(const char *oldname, const char *newname) {
     if (MoveFileEx(oldname, newname, MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED) == 0) {
         fprintf(stderr, "MoveFileEx failed with error code: %lu\n", GetLastError());
@@ -48,32 +49,32 @@ int rename_file(const char *oldname, const char *newname) {
 }
 #else
 
-///////// #include <openssl/sha.h>
-///////// #include <openssl/md5.h>
-///////// 
-///////// // Compute SHA-256 hash
-///////// void compute_hash_sha256(const char *data, int data_length, char *hash) {
-/////////     unsigned char digest[SHA256_DIGEST_LENGTH];
-/////////     SHA256((unsigned char *)data, data_length, digest);
-/////////     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-/////////         sprintf(hash + (i * 2), "%02x", digest[i]);
-/////////     }
-/////////     hash[SHA256_DIGEST_LENGTH * 2] = '\0'; // Null-terminate the string
-///////// }
-///////// 
-///////// // Compute MD5 hash
-///////// void compute_hash_md5(const char *data, int data_length, char *hash) {
-/////////     unsigned char digest[MD5_DIGEST_LENGTH];
-/////////     MD5((unsigned char *)data, data_length, digest);
-/////////     for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
-/////////         sprintf(hash + (i * 2), "%02x", digest[i]);
-/////////     }
-/////////     hash[MD5_DIGEST_LENGTH * 2] = '\0'; // Null-terminate the string
-///////// }
-///////// // Compute hash
-///////// void compute_hash(const char *data, int data_length, char *hash) {
-/////////     compute_hash_md5(data,data_length,hash);
-///////// }
+#include <openssl/sha.h>
+#include <openssl/md5.h>
+
+// Compute SHA-256 hash
+void compute_hash_sha256(char *data, int data_length, char *hash) {
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    SHA256((unsigned char *)data, data_length, digest);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        sprintf(hash + (i * 2), "%02x", digest[i]);
+    }
+    hash[SHA256_DIGEST_LENGTH * 2] = '\0'; // Null-terminate the string
+}
+
+// Compute MD5 hash
+void compute_hash_md5(const char *data, int data_length, char *hash) {
+    unsigned char digest[MD5_DIGEST_LENGTH];
+    MD5((unsigned char *)data, data_length, digest);
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+        sprintf(hash + (i * 2), "%02x", digest[i]);
+    }
+    hash[MD5_DIGEST_LENGTH * 2] = '\0'; // Null-terminate the string
+}
+// Compute hash
+static void compute_hash(char *data, int data_length, char *hash) {
+    compute_hash_md5(data,data_length,hash);
+}
 
 int rename_file(const char *oldname, const char *newname) {
     return rename(oldname,newname);
@@ -94,54 +95,120 @@ record_t* record__static__new_from_buffer(int start, char* data, int data_length
     return record;
 }
 
+/**
+ * Creates a copy of the given record.
+ * The caller is responsible for freeing the returned copy.
+ */
+record_t* record__instance__copy(const record_t *self) {
+    if (!self) return NULL;
+
+    // Allocate memory for the new record
+    record_t *copy = (record_t *)malloc(sizeof(record_t));
+    if (!copy) return NULL;
+
+    // Copy the content of the original record to the new one
+    memcpy(copy, self, sizeof(record_t));
+
+    return copy;
+}
+
+
 int record__instance__is_deleted(const record_t *record) {
     if (!record) return 0; // Null records are not considered deleted
     return record->start == 0 && record->end == 0;
 }
 
-// Open a database
-database_t* database__static_open(const char* path) {
-    if (!path) return NULL;
+// create a database object
+database_t* database__static_new(const char* path) {
+    if (!path) {
+        fprintf(stderr, "Error: Path cannot be NULL\n");
+        return NULL;
+    }
 
+    // Allocate memory for the database instance
     database_t *db = (database_t*)malloc(sizeof(database_t));
-    if (!db) return NULL;
+    if (!db) {
+        fprintf(stderr, "Error: Failed to allocate memory for database\n");
+        return NULL;
+    }
 
-    db->path = strdup(path);
-    db->record_list = NULL;
-    db->record_list_length = 0;
-
-    char data_file_path[256];
-    char index_file_path[256];
-    snprintf(data_file_path, 256, "%s.data", path);
-    snprintf(index_file_path, 256, "%s.index", path);
-
-    db->data_file_reference = open(data_file_path, O_RDWR | O_CREAT, 0666);
-    db->index_file_reference = open(index_file_path, O_RDWR | O_CREAT, 0666);
-
-    if (db->data_file_reference == -1 || db->index_file_reference == -1) {
+    // Initialize fields
+    db->path = strdup(path); // Duplicate the path
+    if (!db->path) {
+        fprintf(stderr, "Error: Failed to allocate memory for path\n");
         free(db);
         return NULL;
     }
 
-    struct stat st;
-    if (fstat(db->index_file_reference, &st) == 0 && st.st_size > 0) {
-        db->record_list_length = st.st_size / sizeof(record_t);
-        db->record_list = (record_t*)malloc(st.st_size);
-        pread(db->index_file_reference, db->record_list, st.st_size, 0);
-    }
+    db->data_file_reference = -1;
+    db->index_file_reference = -1;
+    db->record_list = NULL;
+    db->record_list_length = 0;
 
     return db;
+}
+// Open a database
+error_t database__static_open(database_t* self) {
+    if (!self || !self->path) {
+        fprintf(stderr, "Error: Database object or path is uninitialized\n");
+        return -1;
+    }
+
+    // Open the data and index files
+    char data_file_path[256];
+    char index_file_path[256];
+    snprintf(data_file_path, sizeof(data_file_path), "%s.data", self->path);
+    snprintf(index_file_path, sizeof(index_file_path), "%s.index", self->path);
+
+    self->data_file_reference = open(data_file_path, O_RDWR | O_CREAT, 0666);
+    self->index_file_reference = open(index_file_path, O_RDWR | O_CREAT, 0666);
+
+    if (self->data_file_reference == -1 || self->index_file_reference == -1) {
+        perror("Failed to open database files");
+        return -1;
+    }
+
+    // Load records from the index file
+    struct stat st;
+    if (fstat(self->index_file_reference, &st) == 0 && st.st_size > 0) {
+        self->record_list_length = st.st_size / sizeof(record_t);
+        self->record_list = (record_t*)malloc(st.st_size);
+        if (!self->record_list) {
+            fprintf(stderr, "Error: Failed to allocate memory for record list\n");
+            return -1;
+        }
+        pread(self->index_file_reference, self->record_list, st.st_size, 0);
+    }
+
+    return 0;
 }
 
 // Close a database
 error_t database__static__close(database_t* self) {
     if (!self) return -1;
 
-    if (self->data_file_reference >= 0) close(self->data_file_reference);
-    if (self->index_file_reference >= 0) close(self->index_file_reference);
+    if (self->data_file_reference >= 0) {
+        if (close(self->data_file_reference) == -1) {
+            perror("Failed to close data file");
+            return -1;
+        }
+    }
 
-    if (self->record_list) free(self->record_list);
+    if (self->index_file_reference >= 0) {
+        if (close(self->index_file_reference) == -1) {
+            perror("Failed to close index file");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+error_t database__static__free(database_t* self) {
+    if (!self) return -1;
+
     if (self->path) free((void*)self->path);
+    if (self->record_list) free(self->record_list);
 
     free(self);
     return 0;
@@ -189,6 +256,49 @@ record_t* database__instance__delete_record(database_t* self, record_t* record) 
     return &self->record_list[self->record_list_length - 1];
 }
 
+/**
+ * Reads the content of a record from the database.
+ * 
+ * @param self - The database instance.
+ * @param record - The record whose content needs to be read.
+ * @param content - A pre-allocated buffer to store the record content.
+ *                  The buffer size should be at least (record->end - record->start).
+ * 
+ * @return 0 on success, -1 on failure.
+ */
+error_t database__instance__get_record_content(database_t* self, record_t* record, char* content) {
+    if (!self || !record || !content) return -1;
+
+    // Check if the record is deleted
+    if (record__instance__is_deleted(record)) {
+        fprintf(stderr, "Cannot read content: Record is deleted\n");
+        return -1;
+    }
+
+    // Calculate the size of the content to read
+    size_t content_size = record->end - record->start;
+    if (content_size == 0) {
+        fprintf(stderr, "Cannot read content: Record has no data\n");
+        return -1;
+    }
+
+    // Seek to the record's start position in the data file
+    if (lseek(self->data_file_reference, record->start, SEEK_SET) == (off_t)-1) {
+        perror("Failed to seek to record start");
+        return -1;
+    }
+
+    // Read the record content into the buffer
+    if (read(self->data_file_reference, content, content_size) != (ssize_t)content_size) {
+        perror("Failed to read record content");
+        return -1;
+    }
+
+    // Null-terminate the content for safety
+    content[content_size] = '\0';
+
+    return 0;
+}
 
 // List all records
 error_t database__instance__list_all(database_t* self, record_found_fn on_record_found) {
@@ -290,78 +400,116 @@ error_t database__instance__get_latest_records(database_t *self, record_iter_fn 
 error_t database__instance__optimize(database_t *self) {
     if (!self) return -1;
 
-    // Prepare paths for temporary files
+    // Generate the name for the temporary database
+    char temp_db_path[256];
+    snprintf(temp_db_path, 256, "%s_temp", self->path);
+
+    printf(" - creating the temporary database %s\n",temp_db_path);fflush(stdout);
+
+    // Open the temporary database
+    database_t *temp_db = database__static_new(temp_db_path);
+    database__static_open(temp_db);
+    if (!temp_db) {
+        perror("Failed to open temporary database");
+        return -1;
+    }
+
+    // Iterate through the latest records
+    printf(" - reserving space for a list for already processed records %d items\n",self->record_list_length);fflush(stdout);
+    const char **processed_ids = (const char **)calloc(self->record_list_length, sizeof(char *));
+    if (!processed_ids) {
+        database__static__close(temp_db);
+        return -1;
+    }
+
+    size_t processed_count = 0;
+    printf(" - starting iterating records\n");fflush(stdout);
+    for (ssize_t i = self->record_list_length - 1; i >= 0; i--) {
+        record_t *record = record__instance__copy(&(self->record_list[i]));
+
+        printf(" - copying record %03lu with id %032x \n",i,record->id);fflush(stdout);
+
+
+        // Skip if the record ID is already processed
+        if (is_id_in_list(processed_ids, processed_count, record->id)) {
+            printf(" - skipping already processed record %03lu \n",i,record->id);fflush(stdout);
+            continue;
+        }
+
+        // If the record is deleted, add its ID to processed and skip
+        if (record__instance__is_deleted(record)) {
+            printf(" - skipping deleted record %03lu \n",i,record->id);fflush(stdout);
+            processed_ids[processed_count++] = record->id;
+            continue;
+        }
+
+        // Mark the record ID as processed
+        processed_ids[processed_count++] = record->id;
+
+        // Read the record's content from the original database
+        printf(" - copying record content %03lu with id %032x \n",i,record->id);fflush(stdout);
+        size_t content_size = record->end - record->start;
+        char *buffer = (char *)malloc(content_size);
+        if (!buffer) {
+            free(processed_ids);
+            database__static__close(temp_db);
+            return -1;
+        }
+        database__instance__get_record_content(self,record,buffer);
+
+        printf(" - insert record content %03lu with id %032x \n",i,record->id);fflush(stdout);
+        // Insert the record into the temporary database
+        record_t* new_record = database__instance__insert_record(temp_db, buffer, content_size);
+        if(strncmp(record->id,new_record->id,32) != 0) {
+            printf("   - somehow the old record id %032x is different of the new one %032x",record->id,new_record->id);
+        }
+
+        free(buffer);
+    }
+
+    printf(" - freeing processed_ids \n");fflush(stdout);
+    free(processed_ids);
+
+    printf(" - renaming data and index files \n");fflush(stdout);
+
+    printf("   - generating original data files paths \n");fflush(stdout);
+    char original_data_path[256];
+    char original_index_path[256];
+    snprintf(original_data_path, 256, "%s.data", self->path);
+    snprintf(original_index_path, 256, "%s.index", self->path);
+
+    printf("   - generating temporary data files paths \n");fflush(stdout);
     char temp_data_path[256];
     char temp_index_path[256];
-    snprintf(temp_data_path, 256, "%s.data.temp", self->path);
-    snprintf(temp_index_path, 256, "%s.index.temp", self->path);
+    snprintf(temp_data_path, 256, "%s.data", temp_db_path);
+    snprintf(temp_index_path, 256, "%s.index", temp_db_path);
 
-    // Open temporary files
-    int temp_data_fd = open(temp_data_path, O_RDWR | O_CREAT | O_TRUNC, 0666);
-    int temp_index_fd = open(temp_index_path, O_RDWR | O_CREAT | O_TRUNC, 0666);
-    if (temp_data_fd == -1 || temp_index_fd == -1) {
-        if (temp_data_fd != -1) close(temp_data_fd);
-        if (temp_index_fd != -1) close(temp_index_fd);
+
+    ///// printf(" - closing database \n");fflush(stdout);
+    ///// // Close the original database and replace it with the temporary database
+    ///// database__static__close(self);
+    ///// 
+    printf(" - closing temporary database \n");fflush(stdout);
+    // Close the temporary database (now the main database)
+    database__static__close(temp_db);
+    database__static__close(self);
+
+    printf("   - removing original data files \n");fflush(stdout);
+    remove(original_data_path);
+    remove(original_index_path);
+
+    printf("   - renaming new data files \n");fflush(stdout);
+    if (rename(temp_data_path, original_data_path) == -1) {
+        perror("Failed to rename temp data file");
+        return -1;
+    }
+    if (rename(temp_index_path, original_index_path) == -1) {
+        perror("Failed to rename temp index file");
         return -1;
     }
 
-    // Callback to write valid records to temporary files
-    error_t write_record_to_temp(record_t *record, int ord) {
-        size_t content_size = record->end - record->start;
-
-        // Read the record's content from the original data file
-        char *buffer = (char *)malloc(content_size);
-        if (!buffer) return -1;
-        lseek(self->data_file_reference, record->start, SEEK_SET);
-        read(self->data_file_reference, buffer, content_size);
-
-        // Write the content to the temporary data file
-        off_t new_start = lseek(temp_data_fd, 0, SEEK_END);
-        write(temp_data_fd, buffer, content_size);
-        free(buffer);
-
-        // Update the record's start and end for the new data file
-        record->start = new_start;
-        record->end = new_start + content_size;
-
-        // Write the updated record to the temporary index file
-        pwrite(temp_index_fd, record, sizeof(record_t), ord * sizeof(record_t));
-
-        return 0;
-    }
-
-    // Use the iterator to process the latest, non-deleted records
-    error_t result = database__instance__get_latest_records(self, write_record_to_temp);
-    if (result != 0) {
-        close(temp_data_fd);
-        close(temp_index_fd);
-        return result;
-    }
-
-    // Cleanup
-    close(self->data_file_reference);
-    close(self->index_file_reference);
-    close(temp_data_fd);
-    close(temp_index_fd);
-
-    // Replace old files with optimized files
-    char old_data_path[256];
-    char old_index_path[256];
-    snprintf(old_data_path, 256, "%s.data", self->path);
-    snprintf(old_index_path, 256, "%s.index", self->path);
-
-    if (rename(temp_data_path, old_data_path) == -1) {
-        perror("Failed to rename temp_data_path to old_data_path");
-        return -1;
-    }
-    if (rename(temp_index_path, old_index_path) == -1) {
-        perror("Failed to rename temp_index_path to old_index_path");
-        return -1;
-    }
-
-    // Reopen the new files for the database
-    self->data_file_reference = open(old_data_path, O_RDWR, 0666);
-    self->index_file_reference = open(old_index_path, O_RDWR, 0666);
+    printf("   - reopening new data files \n");fflush(stdout);
+    database__static_open(self);
 
     return 0;
 }

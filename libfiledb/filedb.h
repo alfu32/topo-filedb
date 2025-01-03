@@ -24,6 +24,11 @@ typedef record_s record_t;
  */
 record_t* record__static__new_from_buffer(int start,char* data,int data_length);
 /**
+ * Creates a copy of the given record.
+ * The caller is responsible for freeing the returned copy.
+ */
+record_t* record__instance__copy(const record_t *self);
+/**
  * checks if the record is deleted or not
  */
 int record__instance__is_deleted(const record_t *record);
@@ -56,17 +61,24 @@ typedef struct database_s {
 } database_s;
 
 typedef database_s database_t;
-
 /**
- * creates a database connection.
+ * creates a new instance of a database
+ */
+database_t* database__static_new(const char* path);
+/**
+ * initialises a database connection.
  * if any of the index file or data file do not exist it will create them
  * if both exist it will read the binary index file into the new database record_list
  */
-database_t* database__static_open(const char* path);
+error_t database__static_open(database_t* self);
+/**
+ * closes the files of the database
+ */
+error_t database__static__close(database_t* self);
 /**
  * frees up the memory of the database
  */
-error_t database__static__close(database_t* self);
+error_t database__static__free(database_t* self);
 /**
  * creates a new record.
  * the binary data is stored at the end of the data 
@@ -86,6 +98,11 @@ record_t* database__instance__delete_record(database_t* self,record_t* record);
  * functional type used in the record iterator functions
  */
 typedef error_t (*record_found_fn)(record_t*,int ord);
+
+/**
+ * reads the record content
+ */
+error_t database__instance__get_record_content(database_t* self, record_t* record, char* content);
 
 /**
  * lists all the records with no sorting
