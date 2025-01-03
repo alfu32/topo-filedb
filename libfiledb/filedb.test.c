@@ -20,6 +20,14 @@ void test_record_creation() {
     free(record);
 }
 
+void test_record_allocation() {
+    record_t record = {.start = 0, .end = 20};
+    char *buffer = record__instance__allocate_content_buffer(&record);
+    assert(buffer != NULL);
+    free(buffer);
+    printf("test_record_allocation passed!\n");
+}
+
 void test_record_copy() {
     record_t original = {
         .id = "abc123def456ghi789jkl012mno345pq",
@@ -121,6 +129,35 @@ void test_get_latest_records(const char* dbname){
     }
 }
 
+error_t test_counter_fn_1(int* context, record_t* record, int ord) {
+        printf("Record %d: ID = %.32s\n", ord, record->id);
+        return 0;
+    }
+error_t test_counter_fn_2(int* context, record_t* record, int ord) {
+        printf("Latest Record %d: ID = %.32s\n", ord, record->id);
+        return 0;
+    }
+
+// void test_aggregation(const char* dbname) {
+//     database_t *db = database__static_open(dbname);
+// 
+//     // Insert some records
+//     database__instance__insert_record(db, "Record 1", 8);
+//     database__instance__insert_record(db, "Record 2", 8);
+//     database__instance__insert_record(db, "Record 3", 8);
+// 
+//     int count_all=0;
+//     int count_latest=0;
+// 
+//     // Aggregate all records
+//     database__instance__aggregate_all(db, test_counter_fn_1, (void*)&count_all);
+// 
+//     // Aggregate latest records
+//     database__instance__aggregate_latest_records(db, test_counter_fn_2, (void*)&count_latest);
+// 
+//     database__static__close(db);
+// }
+
 void test_optimize(const char* dbname) {
     database_t *db = database__static_new(dbname);
     database__static_open(db);
@@ -207,6 +244,8 @@ int main(int argc,const char** argv) {
     test_record_creation();
     printf("=== test_record_copy  ...............====================================================\n");
     test_record_copy();
+    printf("=== test_record_allocation  .........====================================================\n");
+    test_record_allocation();
     printf("=== test_record_is_deleted  .........====================================================\n");
     test_record_is_deleted();
     printf("=== test_database_open_and_close  ...====================================================\n");

@@ -3,3 +3,6 @@
 question_0?
 .vscode
 bin
+*.journal
+*.data
+*.index

@@ -94,6 +94,34 @@ record_t* record__static__new_from_buffer(int start, char* data, int data_length
     record->end = start + data_length;
     return record;
 }
+/**
+ * Allocates a buffer large enough to hold the content of a record.
+ * The caller is responsible for freeing the allocated memory.
+ * Returns NULL if the record is deleted or if the allocation fails.
+ */
+char* record__instance__allocate_content_buffer(const record_t *self) {
+    if (!self || record__instance__is_deleted(self)) {
+        fprintf(stderr, "Error: Cannot allocate buffer for a deleted record or NULL record\n");
+        return NULL;
+    }
+
+    // Calculate the buffer size
+    size_t content_size = self->end - self->start;
+    if (content_size == 0) {
+        fprintf(stderr, "Error: Record has no content\n");
+        return NULL;
+    }
+
+    // Allocate the buffer
+    char *buffer = (char *)malloc(content_size + 1); // +1 for null-termination
+    if (!buffer) {
+        perror("Failed to allocate memory for content buffer");
+        return NULL;
+    }
+
+    buffer[content_size] = '\0'; // Null-terminate
+    return buffer;
+}
 
 /**
  * Creates a copy of the given record.
@@ -310,6 +338,27 @@ error_t database__instance__list_all(database_t* self, record_found_fn on_record
     return 0;
 }
 
+/**
+ * Aggregates all the records with no sorting.
+ * 
+ * @param self - The database instance.
+ * @param on_record_found - The callback function for each record.
+ * @return 0 on success, -1 on failure.
+ */
+error_t database__instance__aggregate_all(database_t* self, record_aggregator_fn on_record_found, void* context) {
+    if (!self || !on_record_found) return -1;
+
+    for (size_t i = 0; i < self->record_list_length; i++) {
+        record_t *record = &self->record_list[i];
+
+        // Call the callback function
+        error_t result = on_record_found(context, record, (int)i);
+        if (result != 0) return result; // Stop if the callback signals an error
+    }
+
+    return 0;
+}
+
 // List all records with content
 error_t database__instance__list_all_with_content(database_t* self, record_found_with_content_fn on_record_with_content_found) {
     if (!self || !on_record_with_content_found) return -1;
@@ -320,7 +369,7 @@ error_t database__instance__list_all_with_content(database_t* self, record_found
 
         if (content_size == 0) continue;
 
-        char *content = (char *)malloc(content_size + 1);
+        char *content = record__instance__allocate_content_buffer(record);
         if (!content) return -1;
 
         if (lseek(self->data_file_reference, record->start, SEEK_SET) == (off_t)-1) {
@@ -358,7 +407,7 @@ static int is_id_in_list(const char **processed_ids, size_t count, const char *i
  * Iterates over the latest, non-deleted records.
  * Calls the provided callback function for each valid record.
  */
-error_t database__instance__get_latest_records(database_t *self, record_iter_fn on_record_found) {
+error_t database__instance__get_latest_records(database_t *self, record_found_fn on_record_found) {
     if (!self || !on_record_found) return -1;
 
     // Allocate memory for tracking processed IDs
@@ -392,6 +441,57 @@ error_t database__instance__get_latest_records(database_t *self, record_iter_fn 
     }
 
     // Cleanup
+    free(processed_ids);
+    return 0;
+}
+
+/**
+ * Aggregates the latest records with no sorting.
+ * 
+ * @param self - The database instance.
+ * @param on_record_found - The callback function for each record.
+ * @param context - User-provided context passed to the callback.
+ * @return 0 on success, -1 on failure.
+ */
+error_t database__instance__aggregate_latest_records(database_t* self, record_aggregator_fn on_record_found, void* context) {
+    if (!self || !on_record_found) return -1;
+
+    // Allocate memory for tracking processed IDs
+    const char **processed_ids = (const char **)calloc(self->record_list_length, sizeof(char *));
+    if (!processed_ids) return -1;
+
+    size_t processed_count = 0;
+
+    for (ssize_t i = self->record_list_length - 1; i >= 0; i--) {
+        record_t *record = &self->record_list[i];
+
+        // Skip if the record ID is already processed
+        int already_processed = 0;
+        for (size_t j = 0; j < processed_count; j++) {
+            if (strncmp(processed_ids[j], record->id, 32) == 0) {
+                already_processed = 1;
+                break;
+            }
+        }
+        if (already_processed) continue;
+
+        // If the record is deleted, mark the ID as processed and skip
+        if (record__instance__is_deleted(record)) {
+            processed_ids[processed_count++] = record->id;
+            continue;
+        }
+
+        // Call the callback for the latest record
+        error_t result = on_record_found(context, record, (int)processed_count);
+        if (result != 0) {
+            free(processed_ids);
+            return result;
+        }
+
+        // Mark the record ID as processed
+        processed_ids[processed_count++] = record->id;
+    }
+
     free(processed_ids);
     return 0;
 }
@@ -449,12 +549,8 @@ error_t database__instance__optimize(database_t *self) {
         // Read the record's content from the original database
         printf(" - copying record content %03lu with id %032x \n",i,record->id);fflush(stdout);
         size_t content_size = record->end - record->start;
-        char *buffer = (char *)malloc(content_size);
-        if (!buffer) {
-            free(processed_ids);
-            database__static__close(temp_db);
-            return -1;
-        }
+        char *buffer = record__instance__allocate_content_buffer(record);
+
         database__instance__get_record_content(self,record,buffer);
 
         printf(" - insert record content %03lu with id %032x \n",i,record->id);fflush(stdout);

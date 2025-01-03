@@ -24,6 +24,10 @@ typedef record_s record_t;
  */
 record_t* record__static__new_from_buffer(int start,char* data,int data_length);
 /**
+ * allocates a new buffer for the record content
+ */
+char* record__instance__allocate_content_buffer(const record_t *self);
+/**
  * Creates a copy of the given record.
  * The caller is responsible for freeing the returned copy.
  */
@@ -110,22 +114,23 @@ error_t database__instance__get_record_content(database_t* self, record_t* recor
 error_t database__instance__list_all(database_t* self,record_found_fn on_record_found);
 
 /**
- * lists all the last version of each record
- *   excluding the records that were deleted
+ * functional type used in the record aggregator functions
  */
-error_t database__instance__list_records(database_t* self,record_found_fn on_record_found);
-
-
+typedef error_t (*record_aggregator_fn)(void* context,record_t*,int ord);
 /**
- * Functional type used for callbacks during iteration
+ * aggregates all the records with no sorting
  */
-typedef error_t (*record_iter_fn)(record_t* record, int ord);
+error_t database__instance__aggregate_all(database_t* self,record_aggregator_fn on_record_found,void* context);
 
 /**
  * Iterates over the latest, non-deleted records.
  * Calls the provided callback function for each valid record.
  */
 error_t database__instance__get_latest_records(database_t *self, record_found_fn on_record_found);
+/**
+ * aggregates latest records with no sorting
+ */
+error_t database__instance__aggregate_latest_records(database_t* self,record_aggregator_fn on_record_found,void* context);
 
 /**
  * functional type used in the record with content iterator functions
