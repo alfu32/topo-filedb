@@ -18,3 +18,6 @@ zig cc -o bin/rectangle.test libscene/rectangle.test.c -Lbin -lscene
 zig cc -o bin/voxel.test libscene/voxel.test.c -Lbin -lscene
 zig cc -o bin/scene.test libscene/scene.test.c -Lbin -lscene
 zig cc -o bin/filedb.test libfiledb/filedb.test.c -Lbin -lfiledb
+
+g++ -o database_test database_test.cpp database.cpp record.cpp -lgtest -lgtest_main -pthread
+

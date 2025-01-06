@@ -80,8 +80,23 @@ x86_64-w64-mingw32-gcc -c -fPIC libfiledb/filedb.c -o bin/o/filedb.o
 echo "=== compiling libfiledb.dll ___________________============================================================="
 x86_64-w64-mingw32-gcc -shared -o bin/libfiledb.dll bin/o/filedb.o
 echo "=== compiling filedb.test.exe _________________============================================================="
-x86_64-w64-mingw32-gcc -o bin/filedb.test.exe libfiledb/filedb.test.c $FLAGS -Lbin -lfiledb
+x86_64-w64-mingw32-gcc -o bin/filedb.test.exe libfiledb/filedb.test.c $FLAGS -Wl,--output-def,bin/filedb.a -Lbin -lfiledb
 echo "=== compiling filedb.test.dll _________________============================================================="
-x86_64-w64-mingw32-gcc -shared -o bin/filedb.test.dll libfiledb/filedb.test.c -Wl,--output-def,bin/filedb.test.def $FLAGS -Lbin -lfiledb
+x86_64-w64-mingw32-gcc -shared -o bin/filedb.test.dll libfiledb/filedb.test.c -Wl,--output-def,bin/filedb.test.def,--out-implib,bin/filedb.test.a $FLAGS -Lbin -lfiledb
 # Create a compressed archive with 7z
 # "C:\Program Files\7-Zip\7z.exe" a "build/voxd31-${TAG}-x86_64-windows.7z" ./build/win64/*
+
+FLAGS=""
+FLAGS="$FLAGS -std=c++17"
+FLAGS="$FLAGS -D_DEFAULT_SOURCE"
+FLAGS="$FLAGS -Wno-missing-braces"
+FLAGS="$FLAGS -s"
+FLAGS="$FLAGS -DPLATFORM_DESKTOP"
+FLAGS="$FLAGS -I./libfiledb"
+FLAGS="$FLAGS -static-libgcc -static-libstdc++ -lstdc++"
+
+echo "=== compiling database_cpp.dll ________________============================================================="
+x86_64-w64-mingw32-g++ -fPIC -shared -o bin/filedbpp.dll libfiledb/filedbpp.cpp -Wl,--output-def,bin/filedbpp.def,--out-implib,bin/filedbpp.a $FLAGS
+echo "=== compiling record_test_cpp.dll _____________============================================================="
+x86_64-w64-mingw32-g++  -shared -fPIC -o bin/filedbpp.test.dll libfiledb/filedbpp.test.cpp -Wl,--output-def,bin/filedbpp.test.def,--out-implib,bin/filedbpp.test.a $FLAGS -Lbin -lfiledbpp
+
