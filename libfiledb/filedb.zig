@@ -38,7 +38,9 @@ pub const Database = struct {
     pub fn init(allocator: *std.mem.Allocator, path: []const u8) !*Database {
         const db = try allocator.create(Database);
         db.path = path;
-        db.recordList = try std.ArrayList(Record).init(allocator);
+        // db.recordList = try std.ArrayList(Record).init(allocator);
+        db.recordList = std.ArrayList(Record).init(allocator.*);
+
         db.dataFile = null;
         db.indexFile = null;
         return db;
