@@ -6,3 +6,4 @@ bin
 *.journal
 *.data
 *.index
+__pycache__
