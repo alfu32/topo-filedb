@@ -309,12 +309,12 @@ extern "C" {
     }
 
     // Export a function that Python can call
-    __declspec(dllexport) int main_tests(int argc, const char* argv[]) {
+    int main_tests(int argc, const char* argv[]) {
         return run_main_tests(argc, argv);
     }
 
     // Export a function that Python can call
-    __declspec(dllexport) int main(int argc, const char* argv[]) {
+    int main(int argc, const char* argv[]) {
         return run_main_tests(argc, argv);
     }
 }
