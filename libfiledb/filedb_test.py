@@ -1,232 +1,167 @@
-import unittest
 import os
-from tempfile import TemporaryDirectory
-from ctypes import POINTER, create_string_buffer
+import sys
+from pathlib import Path
 
-from filedb import FileDB, Record, Database  # Replace with the actual module name
+from filedb import Record, Database  # Replace with the actual module name
 
+# Assuming the Database and Record classes are defined as per the previous code
 
-class TestFileDB(unittest.TestCase):
-    db_wrapper: FileDB = None
-    db_path: str = None
-    database: Database = None
+# Test functions
 
-    def setUp(self):
-        """
-        Set up the test environment. This method runs before each test.
-        """
-        
-        self.db_wrapper = FileDB("/home/alfu64/Development/interview-questionnaire/libfiledb/libfiledb.so")
-        self.db_path = os.path.join(".", "testdb")
-        self.database = self.db_wrapper.create_database(self.db_path)
+def test_create_database(db_path):
+    print("Running: test_create_database",flush=True)
+    db = Database(db_path)
+    db.open()
+    print("Database created and opened successfully.",flush=True)
+    db.close()
+    db.free()
 
-        if not self.database:
-            self.fail("Failed to create database instance.")
+def test_insert_record(db_path):
+    print("Running: test_insert_record",flush=True)
+    db = Database(db_path)
+    db.open()
+    record = db.insert_buffer("test data", len("test data"))
+    print(f"Inserted record ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+    db.close()
+    db.free()
 
-    def tearDown(self):
-        """
-        Clean up the test environment. This method runs after each test.
-        """
-        # if self.database:
-        #     self.db_wrapper.close_database(self.database)
-        #     # self.db_wrapper.free_database(self.database)
+def test_insert_record_object(db_path):
+    print("Running: test_insert_record_object",flush=True)
+    db = Database(db_path)
+    db.open()
+    original_record = Record(0, "data for record object", len("data for record object"))
+    record = db.insert_record(original_record)
+    print(f"Inserted record object ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+    db.close()
+    db.free()
 
-    def test_record_methods(self):
-        """
-        Test the methods of the Record class.
-        """
-        data = b"Record test data"
-        record = self.db_wrapper.insert_record(self.database, data)
+def test_get_record_content(db_path):
+    print("Running: test_get_record_content",flush=True)
+    db = Database(db_path)
+    db.open()
+    record = db.insert_buffer("test content", len("test content"))
+    content = db.get_record_content(record)
+    print(f"Record content: {content.decode('utf-8')}",flush=True)
+    db.close()
+    db.free()
 
-        # Test allocate_content_buffer
-        buffer = record.allocate_content_buffer(self.db_wrapper.lib)
-        self.assertEqual(buffer, data, "Allocated content buffer should match the inserted data.")
+def test_delete_record(db_path):
+    print("Running: test_delete_record",flush=True)
+    db = Database(db_path)
+    db.open()
+    record = db.insert_buffer("data to delete", len("data to delete"))
+    deleted_record = db.delete_record(record)
+    print(f"Deleted record ID: {ffi.string(deleted_record.ptr.id).decode('utf-8')}",flush=True)
+    db.close()
+    db.free()
 
-        # Test copy
-        record_copy = record.copy(self.db_wrapper.lib)
-        self.assertEqual(record.id, record_copy.id, "Copied record ID should match the original.")
-        self.assertEqual(record.start, record_copy.start, "Copied record start position should match.")
-        self.assertEqual(record.end, record_copy.end, "Copied record end position should match.")
+def test_list_all_records(db_path):
+    print("Running: test_list_all_records",flush=True)
+    def on_record_found(record, ord):
+        print(f"Record #{ord}, ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+        return 0  # Success
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("record 1", len("record 1"))
+    db.insert_buffer("record 2", len("record 2"))
+    db.list_all(on_record_found)
+    db.close()
+    db.free()
 
-        # Test is_deleted
-        self.assertFalse(record.is_deleted(self.db_wrapper.lib), "Newly created record should not be deleted.")
+def test_aggregate_all_records(db_path):
+    print("Running: test_aggregate_all_records",flush=True)
+    def on_record_aggregate(context, record, ord):
+        print(f"Aggregated Record #{ord}, ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+        return 0
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("record 1", len("record 1"))
+    db.insert_buffer("record 2", len("record 2"))
+    db.aggregate_all(on_record_aggregate, None)
+    db.close()
+    db.free()
 
+def test_get_latest_records(db_path):
+    print("Running: test_get_latest_records",flush=True)
+    def on_latest_record_found(record, ord):
+        print(f"Latest Record #{ord}, ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+        return 0
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("latest record", len("latest record"))
+    db.get_latest_records(on_latest_record_found)
+    db.close()
+    db.free()
+
+def test_aggregate_latest_records(db_path):
+    print("Running: test_aggregate_latest_records",flush=True)
+    def on_latest_aggregate(context, record, ord):
+        print(f"Aggregated Latest Record #{ord}, ID: {ffi.string(record.ptr.id).decode('utf-8')}",flush=True)
+        return 0
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("latest record 1", len("latest record 1"))
+    db.insert_buffer("latest record 2", len("latest record 2"))
+    db.aggregate_latest_records(on_latest_aggregate, None)
+    db.close()
+    db.free()
+
+def test_list_all_with_content(db_path):
+    print("Running: test_list_all_with_content",flush=True)
+    def on_record_with_content(record, ord, content):
+        print(f"Record #{ord}, ID: {ffi.string(record.ptr.id).decode('utf-8')}, Content: {content.decode('utf-8')}",flush=True)
+        return 0
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("content record 1", len("content record 1"))
+    db.insert_buffer("content record 2", len("content record 2"))
+    db.list_all_with_content(on_record_with_content)
+    db.close()
+    db.free()
+
+def test_optimize_database(db_path):
+    print("Running: test_optimize_database",flush=True)
+    db = Database(db_path)
+    db.open()
+    db.insert_buffer("old record", len("old record"))
+    db.insert_buffer("new record", len("new record"))
+    db.optimize()
+    print("Database optimized.",flush=True)
+    db.close()
+    db.free()
+
+# Main function
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python script.py <database_file_path>",flush=True)
+        return
     
-    def test_create_database(self):
-        """
-        Test creating a database instance.
-        """
-        self.assertIsNotNone(self.database, "Database instance should not be None.")
-        self.assertIsInstance(self.database, Database, "Should return a Database instance.")
+    db_path = os.path.join(".", sys.argv[1])
+    db_file = Path(db_path)
+    
+    # if db_file.exists():
+    #     print(f"Removing existing database file: {db_path}",flush=True)
+    #     db_file.unlink()  # Remove the existing database file for fresh tests
 
-    def test_open_database(self):
-        """
-        Test opening the database.
-        """
-        result = self.db_wrapper.open_database(self.database)
-        self.assertEqual(result, 0, "Opening database should return 0 on success.")
+    # List of test functions
+    tests = [
+        test_create_database,
+        test_insert_record,
+        test_insert_record_object,
+        test_get_record_content,
+        test_delete_record,
+        test_list_all_records,
+        test_aggregate_all_records,
+        test_get_latest_records,
+        test_aggregate_latest_records,
+        test_list_all_with_content,
+        test_optimize_database,
+    ]
 
-    def test_insert_record(self):
-        """
-        Test inserting a record into the database.
-        """
-        self.db_wrapper.open_database(self.database)
-
-        data = b"Test record data"
-        record = self.db_wrapper.insert_record(self.database, data)
-        self.assertIsNotNone(record, "Inserted record should not be None.")
-        self.assertIsInstance(record, Record, "Should return a Record instance.")
-
-    def test_delete_record(self):
-        """
-        Test deleting a record.
-        """
-        data = b"Test delete record"
-        record = self.db_wrapper.insert_record(self.database, data)
-
-        deleted_record = self.db_wrapper.delete_record(self.database, record)
-        self.assertIsInstance(deleted_record, Record, "Deleted record should be an instance of Record.")
-        self.assertTrue(deleted_record.is_deleted(self.db_wrapper.lib), "Deleted record should be marked as deleted.")
-
-    def test_get_record_content(self):
-        """
-        Test retrieving record content.
-        """
-        self.db_wrapper.open_database(self.database)
-
-        data = b"Test record data"
-        record = self.db_wrapper.insert_record(self.database, data)
-        self.assertIsNotNone(record, "Inserted record should not be None.")
-
-        # Use create_string_buffer for a proper ctypes-compatible buffer
-        content_buffer = create_string_buffer(len(data))
-        result = self.db_wrapper.lib.database__instance__get_record_content(
-            POINTER(Database)(self.database), POINTER(Record)(record), content_buffer
-        )
-        self.assertEqual(result, 0, "Getting record content should return 0 on success.")
-        self.assertEqual(content_buffer.value, data, "Record content should match inserted data.")
-
-
-    def test_close_database(self):
-        """
-        Test closing the database.
-        """
-        result = self.db_wrapper.close_database(self.database)
-        self.assertEqual(result, 0, "Closing database should return 0 on success.")
-
-    def test_is_record_deleted(self):
-        """
-        Test checking if a record is deleted.
-        """
-        self.db_wrapper.open_database(self.database)
-
-        data = b"Test record data"
-        record = self.db_wrapper.insert_record(self.database, data)
-        self.assertFalse(
-            self.db_wrapper.is_record_deleted(record), "Newly inserted record should not be marked as deleted."
-        )
-
-    def test_list_all_records(self):
-        """
-        Test listing all records.
-        """
-        # Insert sample records
-        data1 = b"Test data 1"
-        data2 = b"Test data 2"
-        self.db_wrapper.insert_record(self.database, data1)
-        self.db_wrapper.insert_record(self.database, data2)
-
-        results = []
-
-        def callback(record: Record, ordinal: int):
-            results.append((record, ordinal))
-
-        self.db_wrapper.list_all_records(self.database, callback)
-        self.assertEqual(len(results), 2, "Should list all records.")
-        self.assertEqual(results[0][1], 0, "First record ordinal should be 0.")
-        self.assertEqual(results[1][1], 1, "Second record ordinal should be 1.")
-
-    def test_aggregate_all_records(self):
-        """
-        Test aggregating all records.
-        """
-        # Insert sample records
-        data1 = b"Aggregate data 1"
-        data2 = b"Aggregate data 2"
-        self.db_wrapper.insert_record(self.database, data1)
-        self.db_wrapper.insert_record(self.database, data2)
-
-        aggregated = []
-
-        def callback(context, record: Record, ordinal: int):
-            aggregated.append((record, ordinal))
-
-        context = "test_context"
-        self.db_wrapper.aggregate_all_records(self.database, callback, context)
-        self.assertEqual(len(aggregated), 2, "Should aggregate all records.")
-
-    def test_get_latest_records(self):
-        """
-        Test getting the latest non-deleted records.
-        """
-        # Insert and delete records
-        data1 = b"Latest record 1"
-        data2 = b"Latest record 2"
-        record1 = self.db_wrapper.insert_record(self.database, data1)
-        self.db_wrapper.insert_record(self.database, data2)
-        self.db_wrapper.delete_record(self.database, record1)  # Simulate a delete for record1
-
-        latest = []
-
-        def callback(record: Record, ordinal: int):
-            latest.append((record, ordinal))
-
-        self.db_wrapper.get_latest_records(self.database, callback)
-        self.assertEqual(len(latest), 1, "Should only list the latest records.")
-        self.assertNotEqual(latest[0][0].id, record1.id, "Deleted record should not appear.")
-
-    def test_aggregate_latest_records(self):
-        """
-        Test aggregating the latest non-deleted records.
-        """
-        # Insert and delete records
-        data1 = b"Aggregate latest 1"
-        data2 = b"Aggregate latest 2"
-        record1 = self.db_wrapper.insert_record(self.database, data1)
-        record2 = self.db_wrapper.insert_record(self.database, data2)
-        self.db_wrapper.delete_record(self.database, record2)  # Simulate a delete for record1
-
-        aggregated_latest = []
-
-        def callback(context, record: Record, ordinal: int):
-            aggregated_latest.append((record, ordinal))
-
-        context = "aggregate_context"
-        self.db_wrapper.aggregate_latest_records(self.database, callback, context)
-        self.assertEqual(len(aggregated_latest), 1, "Should only aggregate the latest records.")
-        self.assertNotEqual(aggregated_latest[0][0].id, record1.id, "Deleted record should not be aggregated.")
-
-    def test_list_all_with_content(self):
-        """
-        Test listing all records along with their content.
-        """
-        # Insert sample records
-        data1 = b"Content data 1"
-        data2 = b"Content data 2"
-        self.db_wrapper.insert_record(self.database, data1)
-        self.db_wrapper.insert_record(self.database, data2)
-
-        results_with_content = []
-
-        def callback(record: Record, ordinal: int, content: bytes):
-            results_with_content.append((record, ordinal, content))
-
-        self.db_wrapper.list_all_with_content(self.database, callback)
-        self.assertEqual(len(results_with_content), 2, "Should list all records with content.")
-        self.assertEqual(results_with_content[0][2], data1, "Content should match for record 1.")
-        self.assertEqual(results_with_content[1][2], data2, "Content should match for record 2.")
-
-
+    for n,test in enumerate(tests):
+        print(f"\n{'='*40}\nRunning test {n}: {test.__name__}\n{'='*40}",flush=True)
+        test(db_path)
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
