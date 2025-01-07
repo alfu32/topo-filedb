@@ -5,6 +5,7 @@
 #include "filedb.h"
 
 #define DEFAULT_TEST_DATABASE_NAME "testdb"
+int cbk_print_record(record_t *record, int ord);
 
 void test_record_creation() {
     char data[] = "Test content creation";
@@ -49,6 +50,8 @@ void test_record_copy() {
 void test_record_is_deleted() {
     record_t record1 = {.id = "test1", .start = 0, .end = 0};
     record_t record2 = {.id = "test2", .start = 10, .end = 20};
+    cbk_print_record(&record1,1);
+    cbk_print_record(&record2,2);
 
     assert(record__instance__is_deleted(&record1) == 1); // Should be true
     assert(record__instance__is_deleted(&record2) == 0); // Should be false
@@ -66,24 +69,50 @@ void test_database_open_and_close(const char* dbname) {
     assert(database__static__free(db) == 0);
 }
 
-void test_insert_record(const char* dbname) {
+void test_insert_buffer(const char* dbname) {
     database_t *db = database__static_new(dbname);
     database__static_open(db);
     char data[] = "Hello, database test_insert_record!";
-    record_t *record = database__instance__insert_record(db, data, strlen(data));
+    record_t *record = database__instance__insert_buffer(db, data, strlen(data));
+    cbk_print_record(record,2);
     assert(record != NULL);
     // assert(strlen(record->id) <= 32);
     assert(database__static__close(db) == 0);
     assert(database__static__free(db) == 0);
+}
+void test_insert_existing_record(const char* dbname) {
+    database_t *db = database__static_new(dbname);
+    database__static_open(db);
+
+    // Create a record
+    record_t record = {
+        .id = "abcdef1234567890abcdef1234567890",
+        .start = 0,
+        .end = 0  // Marked as deleted
+    };
+    cbk_print_record(&record,1);
+
+    // Insert the record
+    record_t* inserted = database__instance__insert_record(db, &record);
+    cbk_print_record(inserted,2);
+    assert(inserted != NULL);
+    assert(strncmp(inserted->id, record.id, 32) == 0);
+    assert(inserted->start == record.start);
+    assert(inserted->end == record.end);
+
+    printf("test_insert_existing_record passed!\n");
+    database__static__close(db);
 }
 
 void test_delete_record(const char* dbname) {
     database_t *db = database__static_new(dbname);
     database__static_open(db);
     char data[] = "Test delete";
-    record_t *record = database__instance__insert_record(db, data, strlen(data));
+    record_t *record = database__instance__insert_buffer(db, data, strlen(data));
+    cbk_print_record(record,1);
     assert(record != NULL);
     record_t *deleted = database__instance__delete_record(db, record);
+    cbk_print_record(deleted,1);
     assert(deleted != NULL);
     assert(deleted->start == deleted->end);
     assert(database__static__close(db) == 0);
@@ -105,8 +134,10 @@ void test_list_all(const char* dbname) {
     database__static_open(db);
     char data1[] = "Record 1 test_list_all";
     char data2[] = "Record 2 test_list_all";
-    database__instance__insert_record(db, data1, strlen(data1));
-    database__instance__insert_record(db, data2, strlen(data2));
+    record_t* a=database__instance__insert_buffer(db, data1, strlen(data1));
+    cbk_print_record(a,1);
+    record_t* b=database__instance__insert_buffer(db, data2, strlen(data2));
+    cbk_print_record(b,1);
 
     assert(database__instance__list_all(db, cbk_print_record) == 0);
     assert(database__static__close(db) == 0);
@@ -142,9 +173,9 @@ error_t test_counter_fn_2(int* context, record_t* record, int ord) {
 //     database_t *db = database__static_open(dbname);
 // 
 //     // Insert some records
-//     database__instance__insert_record(db, "Record 1", 8);
-//     database__instance__insert_record(db, "Record 2", 8);
-//     database__instance__insert_record(db, "Record 3", 8);
+//     database__instance__insert_buffer(db, "Record 1", 8);
+//     database__instance__insert_buffer(db, "Record 2", 8);
+//     database__instance__insert_buffer(db, "Record 3", 8);
 // 
 //     int count_all=0;
 //     int count_latest=0;
@@ -163,8 +194,8 @@ void test_optimize(const char* dbname) {
     database__static_open(db);
     char data1[] = "Record 1 test_optimize";
     char data2[] = "Record 2 test_optimize";
-    database__instance__insert_record(db, data1, strlen(data1));
-    database__instance__insert_record(db, data2, strlen(data2));
+    database__instance__insert_buffer(db, data1, strlen(data1));
+    database__instance__insert_buffer(db, data2, strlen(data2));
     database__instance__delete_record(db, &db->record_list[0]);
     printf(" - print unoptimized\n");fflush(stdout);
     assert(database__instance__list_all(db, cbk_print_record) == 0);
@@ -210,11 +241,11 @@ void test_list_all_with_content(const char* dbname) {
     char data3[] = "Another sample record.";
 
     printf("inserting record 1\n");fflush(stdout);
-    record_t *record1 = database__instance__insert_record(db, data1, strlen(data1));
+    record_t *record1 = database__instance__insert_buffer(db, data1, strlen(data1));
     printf("inserting record 2\n");fflush(stdout);
-    record_t *record2 = database__instance__insert_record(db, data2, strlen(data2));
+    record_t *record2 = database__instance__insert_buffer(db, data2, strlen(data2));
     printf("inserting record 3\n");fflush(stdout);
-    record_t *record3 = database__instance__insert_record(db, data3, strlen(data3));
+    record_t *record3 = database__instance__insert_buffer(db, data3, strlen(data3));
 
     assert(record1 != NULL);
     assert(record2 != NULL);
@@ -239,28 +270,33 @@ int main(int argc,const char** argv) {
     }
     printf("using arg[0] = %s for the test database name\n",argv[1]);
     const char* dbname = argv[1];
+
+    int testnum=0;
+    int TOTAL=12;
     
-    printf("=== test_record_creation  ...........====================================================\n");
+    printf("===[%02d/%02d] test_record_creation  ...........====================================================\n",++testnum,TOTAL);
     test_record_creation();
-    printf("=== test_record_copy  ...............====================================================\n");
+    printf("===[%02d/%02d] test_record_copy  ...............====================================================\n",++testnum,TOTAL);
     test_record_copy();
-    printf("=== test_record_allocation  .........====================================================\n");
+    printf("===[%02d/%02d] test_record_allocation  .........====================================================\n",++testnum,TOTAL);
     test_record_allocation();
-    printf("=== test_record_is_deleted  .........====================================================\n");
+    printf("===[%02d/%02d] test_record_is_deleted  .........====================================================\n",++testnum,TOTAL);
     test_record_is_deleted();
-    printf("=== test_database_open_and_close  ...====================================================\n");
+    printf("===[%02d/%02d] test_database_open_and_close  ...====================================================\n",++testnum,TOTAL);
     test_database_open_and_close(dbname);
-    printf("=== test_insert_record  .............====================================================\n");
-    test_insert_record(dbname);
-    printf("=== test_delete_record  .............====================================================\n");
+    printf("===[%02d/%02d] test_insert_buffer  .............====================================================\n",++testnum,TOTAL);
+    test_insert_buffer(dbname);
+    printf("===[%02d/%02d] test_insert_existing_record  .............===========================================\n",++testnum,TOTAL);
+    test_insert_existing_record(dbname);
+    printf("===[%02d/%02d] test_delete_record  .............====================================================\n",++testnum,TOTAL);
     test_delete_record(dbname);
-    printf("=== test_list_all  ..................====================================================\n");
+    printf("===[%02d/%02d] test_list_all  ..................====================================================\n",++testnum,TOTAL);
     test_list_all(dbname);
-    printf("=== test_list_all_with_content  .....====================================================\n");
+    printf("===[%02d/%02d] test_list_all_with_content  .....====================================================\n",++testnum,TOTAL);
     test_list_all_with_content(dbname);
-    printf("=== test_get_latest_records  ........====================================================\n");
+    printf("===[%02d/%02d] test_get_latest_records  ........====================================================\n",++testnum,TOTAL);
     test_get_latest_records(dbname);
-    printf("=== test_optimize  ..................====================================================\n");
+    printf("===[%02d/%02d] test_optimize  ..................====================================================\n",++testnum,TOTAL);
     test_optimize(dbname);
 
     printf("All tests passed!\n");

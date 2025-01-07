@@ -243,7 +243,7 @@ error_t database__static__free(database_t* self) {
 }
 
 // Insert a record
-record_t* database__instance__insert_record(database_t* self, char* data, int data_length) {
+record_t* database__instance__insert_buffer(database_t* self, char* data, int data_length) {
     if (!self || !data || data_length <= 0) return NULL;
 
     // Determine the position to write the new record's content
@@ -264,6 +264,38 @@ record_t* database__instance__insert_record(database_t* self, char* data, int da
 
     return record;
 }
+/**
+ * Inserts an existing record into the database.
+ * The record must already point to a valid data chunk or be marked as deleted (start and end are 0).
+ *
+ * @param self - The database instance.
+ * @param record - The record to insert.
+ * @return A pointer to the newly inserted record in the database, or NULL on error.
+ */
+record_t* database__instance__insert_record(database_t* self, record_t* record) {
+    if (!self || !record) return NULL;
+
+    // Append the record to the in-memory record list
+    self->record_list = (record_t*)realloc(self->record_list, (self->record_list_length + 1) * sizeof(record_t));
+    if (!self->record_list) {
+        fprintf(stderr, "Error: Failed to allocate memory for record list\n");
+        return NULL;
+    }
+
+    self->record_list[self->record_list_length] = *record; // Copy the record
+    record_t* new_record = &self->record_list[self->record_list_length];
+    self->record_list_length++;
+
+    // Write the record to the index file
+    if (pwrite(self->index_file_reference, new_record, sizeof(record_t),
+               (self->record_list_length - 1) * sizeof(record_t)) != sizeof(record_t)) {
+        perror("Error: Failed to write record to index file");
+        return NULL;
+    }
+
+    return new_record;
+}
+
 
 // Delete a record
 record_t* database__instance__delete_record(database_t* self, record_t* record) {
@@ -555,7 +587,7 @@ error_t database__instance__optimize(database_t *self) {
 
         printf(" - insert record content %03lu with id %032x \n",i,record->id);fflush(stdout);
         // Insert the record into the temporary database
-        record_t* new_record = database__instance__insert_record(temp_db, buffer, content_size);
+        record_t* new_record = database__instance__insert_buffer(temp_db, buffer, content_size);
         if(strncmp(record->id,new_record->id,32) != 0) {
             printf("   - somehow the old record id %032x is different of the new one %032x",record->id,new_record->id);
         }

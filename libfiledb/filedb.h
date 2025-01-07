@@ -89,7 +89,16 @@ error_t database__static__free(database_t* self);
  *   file then the record object is initialized, stored
  *   in the index file and finally added to the record_list
  */
-record_t* database__instance__insert_record(database_t* self,char* data,int data_length);
+record_t* database__instance__insert_buffer(database_t* self,char* data,int data_length);
+/**
+ * Inserts an existing record into the database.
+ * The record must already point to a valid data chunk or be marked as deleted (start and end are 0).
+ *
+ * @param self - The database instance.
+ * @param record - The record to insert.
+ * @return A pointer to the newly inserted record in the database, or NULL on error.
+ */
+record_t* database__instance__insert_record(database_t* self,record_t* record);
 /**
  * deletes the record by simply inserting a new
  *   record that copies the given record id but uses the content ''
